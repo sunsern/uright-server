@@ -16,8 +16,18 @@ pip install Flask
 </pre>
 
 
-Starting the server
-===================
+Start the server
+================
 <pre>
-python start-uright-server.py
+./start-uright-server.py
 </pre>
+
+
+Monitoring training queue
+=========================
+<pre>
+pip install rq-dashboard
+rq-dashboard
+</pre>
+
+By default, the dashboard is at http://locahost:9181
