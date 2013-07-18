@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-rqworker -q &
+rqworker -q high normal low &
 python uright-server.py --port=8000

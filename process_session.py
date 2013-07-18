@@ -1,7 +1,13 @@
+from redis import Redis
+from rq import Queue
 import MySQLdb as mdb
-import mysql_config as mc
+import datetime
+import traceback
 import json
-import sys
+
+from retrain_protoset import schedule_retrain
+import mysql_config as mc
+
 
 def process_session(session):
     try:
@@ -12,37 +18,53 @@ def process_session(session):
                           charset='utf8');
 
         user_id = session['userID']
-        language_id = session['languageID']
-        session_id = session['sessionID']
         mode_id = session['modeID']
-        
+        session_id = session['sessionID']
+
+        # insert each ink into `inkdata`
         for _round in session['rounds']:
-            start_time = _round['startTime']
-            score = _round['score']
-            penup_time = _round['lastPenupTime']
-            pendown_time = _round['firstPendownTime']
-            label = _round['label']
+            process_round(con, user_id, session_id,
+                          mode_id, _round)
 
-            result = _round['result']
-            if result:
-                predicted = max(result, key=result.get)
-            else:
-                predicted = ''
+        # mark the session as processed
+        current_time = datetime.datetime.now()
+        cur = con.cursor()
+        cur.execute("""
+             UPDATE sessions 
+             SET processed_on=%s
+             WHERE session_id=%s;
+             """, (current_time, session_id))
 
-            result = json.dumps(result)
-            ink = json.dumps(_round['ink'])
-            cur = con.cursor()
-            cur.execute("""
-               INSERT INTO inkdata
-                 (user_id, language_id, session_id, mode_id,
-                  label, predicted, ink, start_time, 
-                  pendown_time, penup_time, attempt)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
-               """,  (user_id, language_id, session_id, mode_id,
-                      label, predicted, ink, start_time, 
-                      pendown_time, penup_time, 0))
-    except Exception as ex:
-        print "Something went wrong ... "
-        print sys.exc_info()[0]
+        con.commit()
+    
+    except:
+        print '-' * 60
+        traceback.print_exc()
+        print '-' * 60
+
     finally:
         if con: con.close()
+
+
+def process_round(con, user_id, session_id, mode_id, _round):
+    label = _round['label']
+    score = _round['score']
+    start_time = _round['startTime']
+    penup_time = _round['lastPenupTime']
+    pendown_time = _round['firstPendownTime']
+    prediction_json = json.dumps(_round['result'])
+    ink_json = json.dumps(_round['ink'])
+
+    cur = con.cursor()
+    cur.execute("""
+           INSERT INTO inkdata
+              (user_id, session_id, mode_id,
+               label, prediction_json, ink_json, 
+               start_time, pendown_time, penup_time, score)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+           """,  (user_id, session_id, mode_id,
+                  label, prediction_json, ink_json, 
+                  start_time, pendown_time, penup_time, score))
+    
+    # schedule a retraining for this user-label pair
+    schedule_retrain(user_id, label) 
