@@ -4,18 +4,16 @@ from datetime import datetime
 import MySQLdb as mdb
 import json
 import traceback
+import numpy as np
 
-from uright.inkutils import user_normalized_ink
 from uright.clustering import ClusterKMeans
 from protoset import ProtosetDTW
 import mysql_config as mc
+import retrain_config as rc
 
 RACE_MODE_ID = 3
 
-def schedule_retrain(user_id, label, 
-                     max_other_examples=100,
-                     max_user_examples=30,
-                     min_new_examples=3):  
+def schedule_retrain(user_id, label):
     try:
         con = mdb.connect('localhost', 
                           mc.mysql_username,
@@ -30,20 +28,20 @@ def schedule_retrain(user_id, label,
 
         # dont retrain if not enough new examples
         n_new_examples = count_new_examples(con, user_id, label)
-        if (n_new_examples < min_new_examples):
+        if (n_new_examples < rc.min_new_examples):
             print "No retrain: too few examples (%d)"%n_new_examples
             return
 
         # read user examples
         user_examples = retrieve_user_examples(
             con, user_id, label, 
-            max_user_examples=max_user_examples)
+            max_user_examples=rc.max_user_examples)
 
         # read other examples
         # TODO: create a static pool or something
         other_examples = retrieve_other_examples(
             con, user_id, label, 
-            max_other_examples=max_other_examples)
+            max_other_examples=rc.max_other_examples)
         
         # put a record in retrain_queue
         retrain_id = mark_as_queued(con, user_id, label)
@@ -65,9 +63,7 @@ def schedule_retrain(user_id, label,
 
 
 def perform_retrain(retrain_id, user_id, label, 
-                    user_examples, other_examples,
-                    maxclust=2, 
-                    target_weight=5.0):
+                    user_examples, other_examples):
     try:
         con = mdb.connect('localhost', 
                           mc.mysql_username,
@@ -81,28 +77,30 @@ def perform_retrain(retrain_id, user_id, label,
         other_data = {label : other_examples}
         combined_data = {'user' : user_data, 
                          'other' : other_data}
-        normalized_data = user_normalized_ink(combined_data, 
-                                              version='uright3')
+
+        # normalize ink?
+        if rc.normalization:
+            normalized_data = do_normalize_ink(combined_data)
+        else:
+            normalized_data = do_center_ink(combined_data)
+
 
         # run kmeans
         clusterer = ClusterKMeans(normalized_data,
                                   target_user_id='user',
                                   algorithm='dtw', 
-                                  maxclust=maxclust, 
+                                  maxclust=rc.maxclust, 
                                   equal_total_weight=False,
-                                  target_weight_multiplier=target_weight)
+                                  target_weight_multiplier=rc.target_weight)
 
         clustered_data = clusterer.clustered_data()                    
 
         # train the prototypes
-        ps = ProtosetDTW(label)
+        ps = ProtosetDTW(label, min_cluster_size=rc.min_cluster_size)
         ps.train(clustered_data[label])
 
-        # convert to json
-        ps_json = ps.toJSON()
-        
-        # add ps_json to table `protosets`
-        insert_protoset(con, user_id, label, ps_json)
+        # add json of protoset to table `protosets`
+        insert_protoset(con, user_id, label, ps.toJSON())
 
         # mark retrain_id as finished
         mark_as_finished(con, retrain_id)
@@ -210,4 +208,32 @@ def mark_as_finished(con, retrain_id):
            """, (current, retrain_id))
     con.commit()
 
-    
+def do_normalize_ink(user_raw_ink, timestamp=False, version='uright3'):
+    from uright.inkutils import json2array, normalize_ink, filter_bad_ink
+    normalized_ink = {}
+    for userid, raw_ink in user_raw_ink.iteritems():
+        temp = {}
+        for label, ink_list in raw_ink.iteritems():
+            temp[label] = [
+                np.nan_to_num(normalize_ink(
+                        json2array(ink, timestamp=timestamp, version=version))) 
+                for ink in filter_bad_ink(ink_list, version=version)]
+        normalized_ink[userid] = temp
+    return normalized_ink
+
+
+def do_center_ink(user_raw_ink, timestamp=False, version='uright3'):
+    from uright.inkutils import json2array, center_ink, filter_bad_ink
+    normalized_ink = {}
+    for userid, raw_ink in user_raw_ink.iteritems():
+        temp = {}
+        for label, ink_list in raw_ink.iteritems():
+            temp[label] = [
+                np.nan_to_num(center_ink(
+                        json2array(ink, timestamp=timestamp, version=version))) 
+                for ink in filter_bad_ink(ink_list, version=version)]
+        normalized_ink[userid] = temp
+    return normalized_ink
+
+
+
