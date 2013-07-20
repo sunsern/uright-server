@@ -106,7 +106,8 @@ def perform_retrain(retrain_id, user_id, label,
         ps.train(clustered_data[label])
 
         # add json of protoset to table `protosets`
-        insert_protoset(con, user_id, label, ps.toJSON())
+        if len(ps.trained_prototypes) > 0:
+            insert_protoset(con, user_id, label, ps.toJSON())
 
         # mark retrain_id as finished
         mark_as_finished(con, retrain_id)
