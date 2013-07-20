@@ -21,7 +21,10 @@ def schedule_retrain(user_id, label):
                           mc.mysql_database,
                           charset='utf8', 
                           use_unicode=True);
-        
+
+        cur = con.cursor()
+        cur.execute("SET NAMES utf8mb4")
+
         if already_queued(con, user_id, label):
             print "No retrain: Already queuing."
             return
@@ -71,6 +74,9 @@ def perform_retrain(retrain_id, user_id, label,
                           mc.mysql_database,
                           charset='utf8', 
                           use_unicode=True);
+
+        cur = con.cursor()
+        cur.execute("SET NAMES utf8mb4")
 
         # prepare training data
         user_data = {label : user_examples}

@@ -16,7 +16,9 @@ def db_connect():
                            mc.mysql_username,
                            mc.mysql_password,
                            mc.mysql_database,
-                           charset='utf8');
+                           charset='utf8')
+    cur = g.db_con.cursor()
+    cur.execute("SET NAMES utf8mb4")
 
 @app.teardown_request
 def db_disconnect(exception=None):
@@ -48,7 +50,6 @@ def charsets():
                     'characters' : json.loads(row['characters']) 
                     }
                 )
-        
         return Response(json.dumps(resp, 
                                    ensure_ascii=False).encode('utf-8'))
     except:

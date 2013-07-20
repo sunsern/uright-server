@@ -21,6 +21,9 @@ def process_session(session):
         mode_id = session['modeID']
         session_id = session['sessionID']
 
+        cur = con.cursor()
+        cur.execute("SET NAMES utf8mb4")
+
         # insert each ink into `inkdata`
         for _round in session['rounds']:
             process_round(con, user_id, session_id,
