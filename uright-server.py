@@ -28,6 +28,30 @@ def db_disconnect(exception=None):
 
 #########################################
 
+@app.route("/annoucement", methods=['POST'])
+def annoucement():
+    try:
+        key = request.form['key']    
+        if (key != mc.secret_key): abort(403)
+
+        con = g.db_con
+        cur = con.cursor(cursorclass=mdb.cursors.DictCursor)    
+        cur.execute("SELECT * FROM charsets WHERE hidden=0;")
+        
+        annoucement = "7/22/2013: Welcome!"
+
+        import time, datetime
+        d = datetime.date(2013,7,22)
+        timestamp = time.mktime(d.timetuple())
+        resp = { 'annoucement' : annoucement,
+                 'timestamp' : timestamp}
+
+        return jsonify(resp)
+    except:
+        return jsonify({'ERROR':1})
+
+#########################################
+
 @app.route("/charsets", methods=['POST'])
 def charsets():
     try:
