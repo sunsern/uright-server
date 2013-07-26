@@ -7,9 +7,13 @@ import traceback
 import numpy as np
 
 from uright.clustering import ClusterKMeans
+from uright.prototype import PrototypeDTW
+from uright.inkutils import INK_STRUCT
 from protoset import ProtosetDTW
 import mysql_config as mc
 import retrain_config as rc
+
+_PU_IDX = INK_STRUCT['PU_IDX']
 
 RACE_MODE_ID = 3
 
@@ -31,7 +35,8 @@ def schedule_retrain(user_id, label):
 
         # dont retrain if not enough new examples
         n_new_examples = count_new_examples(con, user_id, label)
-        if (n_new_examples < rc.min_new_examples):
+        if (hasTrained(con, user_id, label) and 
+            n_new_examples < rc.retrain_frequency):
             print "No retrain: too few examples (%d)"%n_new_examples
             return
 
@@ -40,12 +45,16 @@ def schedule_retrain(user_id, label):
             con, user_id, label, 
             max_user_examples=rc.max_user_examples)
 
-        # read other examples
-        # TODO: create a static pool or something
-        other_examples = retrieve_other_examples(
-            con, user_id, label, 
-            max_other_examples=rc.max_other_examples)
-        
+        # normalize the user ink
+        user_data = None
+        if rc.normalization:
+            user_data = do_normalize_ink(user_examples)
+        else:
+            user_data = do_center_ink(user_examples)
+
+        # get best prototype
+        prototype_data = closest_prototype(con, user_id, label, user_data)
+
         # put a record in retrain_queue
         retrain_id = mark_as_queued(con, user_id, label)
         
@@ -54,7 +63,7 @@ def schedule_retrain(user_id, label):
         ########################
         q = Queue('low', connection=Redis())
         q.enqueue(perform_retrain, retrain_id, user_id, 
-                  label, user_examples, other_examples)
+                  label, user_data, prototype_data)
         
     except:
         print '-'*60
@@ -66,7 +75,7 @@ def schedule_retrain(user_id, label):
 
 
 def perform_retrain(retrain_id, user_id, label, 
-                    user_examples, other_examples):
+                    user_data, prototype_data):
     try:
         con = mdb.connect('localhost', 
                           mc.mysql_username,
@@ -79,31 +88,27 @@ def perform_retrain(retrain_id, user_id, label,
         cur.execute("SET NAMES utf8mb4")
 
         # prepare training data
-        user_data = {label : user_examples}
-        other_data = {label : other_examples}
-        combined_data = {'user' : user_data, 
-                         'other' : other_data}
-
-        # normalize ink?
-        if rc.normalization:
-            normalized_data = do_normalize_ink(combined_data)
+        combined_data = {'user' : {label : user_data}, 
+                         'proto' : {label : prototype_data}}
+        
+        if len(user_data) == 1 and len(prototype_data) == 0:
+            # use the example as prototype
+            ps = ProtosetDTW(label, min_cluster_size=0)
+            ps.train([zip(user_data,[1.0]*len(user_data))])
         else:
-            normalized_data = do_center_ink(combined_data)
+            # run kmeans
+            clusterer = ClusterKMeans(
+                combined_data,
+                target_user_id='proto',
+                algorithm='dtw', 
+                maxclust=rc.maxclust, 
+                equal_total_weight=False,
+                target_weight_multiplier=rc.prototype_weight)
 
-
-        # run kmeans
-        clusterer = ClusterKMeans(normalized_data,
-                                  target_user_id='user',
-                                  algorithm='dtw', 
-                                  maxclust=rc.maxclust, 
-                                  equal_total_weight=False,
-                                  target_weight_multiplier=rc.target_weight)
-
-        clustered_data = clusterer.clustered_data()                    
-
-        # train the prototypes
-        ps = ProtosetDTW(label, min_cluster_size=rc.min_cluster_size)
-        ps.train(clustered_data[label])
+            clustered_data = clusterer.clustered_data() 
+            # train the prototypes
+            ps = ProtosetDTW(label, min_cluster_size=1)
+            ps.train(clustered_data[label])
 
         # add json of protoset to table `protosets`
         if len(ps.trained_prototypes) > 0:
@@ -143,6 +148,20 @@ def mark_as_queued(con, user_id, label):
         """, (user_id, label))
     return con.insert_id()
     
+def hasTrained(con, user_id, label):
+    cur = con.cursor()
+    cur.execute("""
+           SELECT added_on FROM protosets
+           WHERE (user_id=%s AND label=%s)
+           ORDER BY protoset_id DESC
+           LIMIT 1;
+        """, (user_id, label))
+    row = cur.fetchone()
+    if row is None:
+        return False
+    else:
+        return True
+
 def count_new_examples(con, user_id, label):
     cur = con.cursor()
     cur.execute("""
@@ -181,18 +200,45 @@ def retrieve_user_examples(con, user_id, label,
     rows = cur.fetchall()
     return [json.loads(row[0]) for row in rows]
 
-def retrieve_other_examples(con, user_id, label, 
-                            max_other_examples=100):
+def closest_prototype(con, user_id, label, user_data):
     cur = con.cursor()
     cur.execute("""
-           SELECT ink_json FROM inkdata
-           WHERE (user_id!=%s AND label=%s AND 
-                  mode_id=%s)
-           ORDER BY ink_id DESC
-           LIMIT %s;
-        """, (user_id, label, RACE_MODE_ID, max_other_examples))
+         SELECT t1.protoset_json
+         FROM protosets as t1
+         JOIN
+            (SELECT MAX(protoset_id) as pid
+             FROM protosets 
+             WHERE label=%s AND user_id!=%s
+             GROUP BY user_id) as t2
+         ON t1.protoset_id = t2.pid
+        """, (label,user_id,))
     rows = cur.fetchall()
-    return [json.loads(row[0]) for row in rows]
+    
+    # no prototypes found, return empty
+    if len(rows) == 0:
+        return []
+
+    # create a list of prototypes
+    proto_list = []
+    for row in rows:
+        protoset_json = json.loads(row[0])
+        for prototype_json in protoset_json['prototypes']:
+            p = PrototypeDTW(label)
+            p.fromJSON(prototype_json)
+            proto_list.append(p)
+
+    # select the best prototype
+    count = np.zeros(len(proto_list))
+    for ink in user_data:
+        scores = np.zeros(len(proto_list))
+        for i,p in enumerate(proto_list):
+            scores[i] = p.score(ink)
+        count[scores.argmax()] += 1
+    best_proto_ink = proto_list[count.argmax()].model
+
+    # make sure the penup is binary
+    best_proto_ink[:,_PU_IDX] = best_proto_ink[:,_PU_IDX].round()
+    return [best_proto_ink]
 
 def insert_protoset(con, user_id, label, ps_json):
     ps_type = ps_json['type']
@@ -217,30 +263,18 @@ def mark_as_finished(con, retrain_id):
 
 def do_normalize_ink(user_raw_ink, timestamp=False, version='uright3'):
     from uright.inkutils import json2array, normalize_ink, filter_bad_ink
-    normalized_ink = {}
-    for userid, raw_ink in user_raw_ink.iteritems():
-        temp = {}
-        for label, ink_list in raw_ink.iteritems():
-            temp[label] = [
-                np.nan_to_num(normalize_ink(
-                        json2array(ink, timestamp=timestamp, version=version))) 
-                for ink in filter_bad_ink(ink_list, version=version)]
-        normalized_ink[userid] = temp
+    normalized_ink = [
+        np.nan_to_num(
+            normalize_ink(
+                json2array(ink, timestamp=timestamp, version=version))) 
+        for ink in filter_bad_ink(user_raw_ink, version=version)]
     return normalized_ink
 
 
 def do_center_ink(user_raw_ink, timestamp=False, version='uright3'):
     from uright.inkutils import json2array, center_ink, filter_bad_ink
-    normalized_ink = {}
-    for userid, raw_ink in user_raw_ink.iteritems():
-        temp = {}
-        for label, ink_list in raw_ink.iteritems():
-            temp[label] = [
-                np.nan_to_num(center_ink(
-                        json2array(ink, timestamp=timestamp, version=version))) 
-                for ink in filter_bad_ink(ink_list, version=version)]
-        normalized_ink[userid] = temp
+    normalized_ink = [
+        np.nan_to_num(center_ink(
+                json2array(ink, timestamp=timestamp, version=version))) 
+        for ink in filter_bad_ink(user_raw_ink, version=version)]
     return normalized_ink
-
-
-
