@@ -104,12 +104,12 @@ def userstats():
            FROM users WHERE user_id=%s""",(user_id,))
         resp = cur.fetchone()
 
-        # get best bps from race mode
+        # get best bps
         cur = con.cursor()    
         cur.execute("""
             SELECT COALESCE(MAX(bps),0) FROM sessions 
-            WHERE user_id=%s AND mode_id=%s
-            """,(user_id,RACE_MODE_ID))
+            WHERE user_id=%s
+            """,(user_id,))
         row = cur.fetchone()
         resp['best_bps'] = row[0]
 
@@ -117,11 +117,10 @@ def userstats():
         cur = con.cursor()    
         cur.execute("""
             SELECT bps FROM sessions 
-            WHERE user_id=%s AND mode_id=%s
+            WHERE user_id=%s
             ORDER BY session_id DESC
             LIMIT %s;
             """,(user_id,
-                 RACE_MODE_ID,
                  HISTORY_LENGTH))
         rows = cur.fetchall()
         resp['recent_bps'] = [row[0] for row in rows]
@@ -143,17 +142,24 @@ def annoucement():
         con = g.db_con
         cur = con.cursor(cursorclass=mdb.cursors.DictCursor)    
         cur.execute("SELECT * FROM charsets WHERE hidden=0;")
-        
-        annoucement = "7/22/2013: Welcome!"
+
+        resp = {}
 
         import time, datetime
-        d = datetime.date(2013,7,22)
-        timestamp = time.mktime(d.timetuple())
-        resp = { 'annoucement' : annoucement,
-                 'timestamp' : timestamp}
+        f = open("annoucement.txt","r")
+        raw_text = f.readline()
+        if raw_text:
+            data = raw_text.split('::')
+            if len(data) == 2:
+                d = datetime.datetime.strptime(data[0],"%m/%d/%Y").date()
+                timestamp = time.mktime(d.timetuple())
+                resp = { 'annoucement' : data[1],
+                         'timestamp' : timestamp}
 
         return jsonify(resp)
     except:
+        import traceback
+        traceback.print_exc()
         return jsonify({'ERROR':1})
 
 #########################################
