@@ -1,4 +1,6 @@
-from flask import (Flask, Response, request, jsonify, g)
+from flask import (Flask, Response, g,
+                   request, jsonify,
+                   abort, render_template)
 from redis import Redis
 from rq import Queue
 import MySQLdb as mdb
@@ -7,6 +9,15 @@ import json
 
 from process_session import process_session
 import mysql_config as mc
+
+RACE_MODE_ID = 3
+HISTORY_LENGTH = 10
+
+#####################
+# Exp need to level #
+#####################
+#              Lv.1  Lv.2  Lv.3  Lv.4  Lv.5  Lv.6   Lv.7   Lv.8   Lv.9
+_exp_needed = [10.0, 20.0, 30.0, 40.0, 80.0, 160.0, 320.0, 640.0, 1280.0]
 
 app = Flask(__name__)
 
@@ -24,7 +35,102 @@ def db_connect():
 def db_disconnect(exception=None):
     db_con = getattr(g, 'db_con', None)
     if db_con is not None:
+        db_con.commit()
         db_con.close()
+
+#########################################
+
+@app.route("/leaderboard")
+def leaderboard():
+    try:
+        con = g.db_con
+        
+        from datetime import date, timedelta
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6, weeks=-1);
+
+        # get best weekly bps
+        cur = con.cursor()    
+        cur.execute("""
+            SELECT t2.username, t2.level, COALESCE(MAX(t1.bps),0) AS max_bps
+            FROM  sessions AS t1,  users AS t2
+            WHERE t1.user_id = t2.user_id
+            AND t1.mode_id = %s 
+            AND t1.added_on > %s
+            GROUP BY t1.user_id
+            ORDER BY max_bps DESC
+            LIMIT 10
+            """,(RACE_MODE_ID,sunday))
+        rows = cur.fetchall()
+        users = []
+        for i,row in enumerate(rows):
+            rank = i+1
+            username = row[0]
+            level = row[1]
+            bps = row[2]
+            if username.startswith('FB_'):
+                username = username[3:] + ' (FB)'
+            elif username.startswith('PF_'):
+                username = username[3:]
+            users.append({'rank' : rank,
+                          'username' : username,
+                          'level' : level,
+                          'bps' : "%0.2f"%bps})
+
+        return render_template('leaderboard.html', 
+                               users=users)
+    except:
+        import traceback
+        traceback.print_exc()
+        abort(400)
+
+#########################################
+
+@app.route("/userstats", methods=['POST'])
+def userstats():
+    try:
+        key = request.form['key']    
+        if (key != mc.secret_key): abort(403)
+
+        user_id = request.form['user_id']
+
+        con = g.db_con
+        
+        # get exp and level
+        cur = con.cursor(cursorclass=mdb.cursors.DictCursor)
+        cur.execute("""
+           SELECT experience,level,next_level_exp 
+           FROM users WHERE user_id=%s""",(user_id,))
+        resp = cur.fetchone()
+
+        # get best bps from race mode
+        cur = con.cursor()    
+        cur.execute("""
+            SELECT COALESCE(MAX(bps),0) FROM sessions 
+            WHERE user_id=%s AND mode_id=%s
+            """,(user_id,RACE_MODE_ID))
+        row = cur.fetchone()
+        resp['best_bps'] = row[0]
+
+        # get recent bps from race mode
+        cur = con.cursor()    
+        cur.execute("""
+            SELECT bps FROM sessions 
+            WHERE user_id=%s AND mode_id=%s
+            ORDER BY session_id DESC
+            LIMIT %s;
+            """,(user_id,
+                 RACE_MODE_ID,
+                 HISTORY_LENGTH))
+        rows = cur.fetchall()
+        resp['recent_bps'] = [row[0] for row in rows]
+        resp['recent_bps'].reverse()
+
+        return jsonify(resp)
+    except:
+        return jsonify({'ERROR':1})
+
 
 #########################################
 
@@ -185,6 +291,22 @@ def login():
 
 #########################################
 
+def level_by_exp(exp):
+    exp_obj = {}
+    exp_obj['experience'] = exp
+    level = 0
+    next_level_exp = 0
+    for needed in _exp_needed:
+        if exp >= needed:
+            level += 1
+            exp -= needed
+        else:
+            next_level_exp = needed - exp
+            break
+    exp_obj['level'] = level
+    exp_obj['next_level_exp'] = next_level_exp
+    return exp_obj
+
 @app.route("/upload", methods=['POST'])
 def upload():
     try:
@@ -212,6 +334,25 @@ def upload():
           """, (user_id, mode_id, bps, total_time, 
                 total_score, session_json,
                 active_pids, active_chars))
+        
+        # update exp and level
+        if int(mode_id) == RACE_MODE_ID:
+            cur = con.cursor()    
+            cur.execute("""
+               SELECT experience FROM users WHERE user_id=%s
+               """,(user_id,))
+            row = cur.fetchone()
+            exp = level_by_exp(row[0] + float(bps))
+
+            cur = con.cursor()
+            cur.execute("""
+               UPDATE users 
+               SET experience=%s, level=%s, next_level_exp=%s
+               WHERE user_id=%s
+               """, (exp['experience'],
+                     exp['level'],
+                     exp['next_level_exp'],
+                     user_id))
 
         session = json.loads(session_json)
         session['sessionID'] = con.insert_id()

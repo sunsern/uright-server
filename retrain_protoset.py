@@ -116,6 +116,8 @@ def perform_retrain(retrain_id, user_id, label,
 
         # mark retrain_id as finished
         mark_as_finished(con, retrain_id)
+        
+        con.commit()
 
     except:
         print '-'*60
@@ -249,7 +251,6 @@ def insert_protoset(con, user_id, label, ps_json):
               (user_id, label, protoset_type, protoset_json)
            VALUES (%s,%s,%s,%s);
         """, (user_id, label, ps_type, ps_json_str))
-    con.commit()
 
 def mark_as_finished(con, retrain_id):
     current = datetime.now()
@@ -259,7 +260,6 @@ def mark_as_finished(con, retrain_id):
            SET finished_on=%s
            WHERE retrain_id=%s
            """, (current, retrain_id))
-    con.commit()
 
 def do_normalize_ink(user_raw_ink, timestamp=False, version='uright3'):
     from uright.inkutils import json2array, normalize_ink, filter_bad_ink

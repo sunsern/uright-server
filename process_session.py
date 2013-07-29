@@ -69,7 +69,5 @@ def process_round(con, user_id, session_id, mode_id, _round):
                   label, prediction_json, ink_json, 
                   start_time, pendown_time, penup_time, score))
 
-    con.commit()
-
     # schedule a retraining for this user-label pair
     schedule_retrain(user_id, label) 
