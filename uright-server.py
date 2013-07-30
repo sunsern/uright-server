@@ -6,6 +6,7 @@ from rq import Queue
 import MySQLdb as mdb
 import argparse
 import json
+import numpy as np
 
 from process_session import process_session
 import mysql_config as mc
@@ -81,8 +82,7 @@ def leaderboard():
         return render_template('leaderboard.html', 
                                users=users)
     except:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         abort(400)
 
 #########################################
@@ -104,6 +104,12 @@ def userstats():
            FROM users WHERE user_id=%s""",(user_id,))
         resp = cur.fetchone()
 
+        if resp['level'] == 0:
+            resp['this_level_exp'] = resp['experience']
+        else:
+            resp['this_level_exp'] = (resp['experience'] - 
+                                      np.sum(_exp_needed[:resp['level']]))
+            
         # get best bps
         cur = con.cursor()    
         cur.execute("""
@@ -128,6 +134,7 @@ def userstats():
 
         return jsonify(resp)
     except:
+        import traceback; traceback.print_exc()
         return jsonify({'ERROR':1})
 
 
@@ -158,8 +165,7 @@ def annoucement():
 
         return jsonify(resp)
     except:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({'ERROR':1})
 
 #########################################
@@ -189,6 +195,7 @@ def charsets():
         return Response(json.dumps(resp, 
                                    ensure_ascii=False).encode('utf-8'))
     except:
+        import traceback; traceback.print_exc()
         return jsonify({'ERROR':1})
 
 #########################################
@@ -234,6 +241,7 @@ def protosets():
         return Response(json.dumps(resp, 
                                    ensure_ascii=False).encode('utf-8'))
     except:
+        import traceback; traceback.print_exc()
         return jsonify({'ERROR' : 1})
     
 #########################################
@@ -262,6 +270,7 @@ def newuser():
         return jsonify(resp)
 
     except:
+        import traceback; traceback.print_exc()
         return jsonify({'user_id':0})
 
 #########################################
@@ -293,6 +302,7 @@ def login():
         return jsonify(resp)
 
     except:
+        import traceback; traceback.print_exc()
         return jsonify({'login_result':'ERROR'})
 
 #########################################
@@ -340,6 +350,9 @@ def upload():
           """, (user_id, mode_id, bps, total_time, 
                 total_score, session_json,
                 active_pids, active_chars))
+
+        session = json.loads(session_json)
+        session['sessionID'] = con.insert_id()
         
         # update exp and level
         if int(mode_id) == RACE_MODE_ID:
@@ -360,9 +373,6 @@ def upload():
                      exp['next_level_exp'],
                      user_id))
 
-        session = json.loads(session_json)
-        session['sessionID'] = con.insert_id()
-
         ##################################
         # Queue the process_session task #
         ##################################    
@@ -371,6 +381,7 @@ def upload():
 
         return jsonify({'Error':0})
     except:
+        import traceback; traceback.print_exc()
         return jsonify({'Error':1})
 
 #########################################

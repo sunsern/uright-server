@@ -267,7 +267,7 @@ def do_normalize_ink(user_raw_ink, timestamp=False, version='uright3'):
         np.nan_to_num(
             normalize_ink(
                 json2array(ink, timestamp=timestamp, version=version))) 
-        for ink in filter_bad_ink(user_raw_ink, version=version)]
+        for ink in filter_bad_ink(user_raw_ink, min_length=1, version=version)]
     return normalized_ink
 
 
@@ -276,5 +276,5 @@ def do_center_ink(user_raw_ink, timestamp=False, version='uright3'):
     normalized_ink = [
         np.nan_to_num(center_ink(
                 json2array(ink, timestamp=timestamp, version=version))) 
-        for ink in filter_bad_ink(user_raw_ink, version=version)]
+        for ink in filter_bad_ink(user_raw_ink, min_length=1, version=version)]
     return normalized_ink
