@@ -50,6 +50,7 @@ def leaderboard():
         today = date.today()
         monday = today - timedelta(days=today.weekday())
         sunday = monday + timedelta(days=6, weeks=-1);
+        next_sunday = sunday + timedelta(weeks=1);
 
         # get best weekly bps
         cur = con.cursor()    
@@ -80,7 +81,8 @@ def leaderboard():
                           'bps' : "%0.2f"%bps})
 
         return render_template('leaderboard.html', 
-                               users=users)
+                               users=users, 
+                               reset=next_sunday.strftime("%Y/%m/%d"))
     except:
         import traceback; traceback.print_exc()
         abort(400)
