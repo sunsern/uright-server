@@ -255,7 +255,6 @@ def newuser():
         if (key != mc.secret_key): abort(403)    
 
         username = request.form['username']
-        password = request.form['password']
         fullname = request.form['fullname']
         email = request.form['email']
     
@@ -263,9 +262,9 @@ def newuser():
         cur = con.cursor()
         cur.execute("""
            INSERT INTO users
-             (username, password, fullname, email) 
-           VALUES (%s,%s,%s,%s);
-           """, (username, password, fullname, email))
+             (username, fullname, email) 
+           VALUES (%s,%s,%s);
+           """, (username, fullname, email))
 
         resp = {}
         resp['user_id'] = con.insert_id()
@@ -284,19 +283,16 @@ def login():
         if (key != mc.secret_key): abort(403)
 
         username = request.form['username']
-        password = request.form['password']
 
         con = g.db_con
         cur = con.cursor(cursorclass=mdb.cursors.DictCursor)
-        cur.execute("SELECT user_id, password FROM users WHERE username=%s;", 
+        cur.execute("SELECT user_id FROM users WHERE username=%s;", 
                     (username,))
 
         resp = {}
         row = cur.fetchone()
         if row is None:
             resp['login_result'] = 'User not found'
-        elif (password != row['password']):
-            resp['login_result'] = 'Incorrect password'
         else:
             resp['login_result'] = 'OK'
             resp['user_id'] = row['user_id']
