@@ -30,14 +30,16 @@ def schedule_retrain(user_id, label):
         cur.execute("SET NAMES utf8mb4")
 
         if already_queued(con, user_id, label):
-            print "No retrain: Already queuing."
+            print "[User %s] No retrain: Already queuing."%(
+                str(user_id))
             return
 
         # dont retrain if not enough new examples
         n_new_examples = count_new_examples(con, user_id, label)
         if (hasTrained(con, user_id, label) and 
             n_new_examples < rc.retrain_frequency):
-            print "No retrain: too few examples (%d)"%n_new_examples
+            print "[User %s] No retrain: too few examples (%d)"%(
+                str(user_id),n_new_examples)
             return
 
         # read user examples

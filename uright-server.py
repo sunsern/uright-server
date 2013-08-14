@@ -49,8 +49,7 @@ def leaderboard():
         from datetime import date, timedelta
         today = date.today()
         monday = today - timedelta(days=today.weekday())
-        sunday = monday + timedelta(days=6, weeks=-1);
-        next_sunday = sunday + timedelta(weeks=1);
+        next_monday = monday + timedelta(weeks=1);
 
         # get best weekly bps
         cur = con.cursor()    
@@ -63,7 +62,7 @@ def leaderboard():
             GROUP BY t1.user_id
             ORDER BY max_bps DESC
             LIMIT 10
-            """,(RACE_MODE_ID,sunday))
+            """,(RACE_MODE_ID,monday))
         rows = cur.fetchall()
         users = []
         for i,row in enumerate(rows):
@@ -82,7 +81,7 @@ def leaderboard():
 
         return render_template('leaderboard.html', 
                                users=users, 
-                               reset=next_sunday.strftime("%Y/%m/%d"))
+                               reset=next_monday.strftime("%Y/%m/%d"))
     except:
         import traceback; traceback.print_exc()
         abort(400)
