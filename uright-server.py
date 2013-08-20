@@ -74,6 +74,11 @@ def leaderboard():
                 username = username[3:] + ' (FB)'
             elif username.startswith('PF_'):
                 username = username[3:]
+
+            # truncate string to 18 chars
+            username = ((username[:18] + '...') if len(username) > 18 
+                        else username)
+
             users.append({'rank' : rank,
                           'username' : username,
                           'level' : level,

@@ -8,7 +8,7 @@
 <meta name="viewport" content="width=280">
 <style type="text/css">
 table {
-	font:normal 82%/150% "Lucida Grande", 
+	font:normal 75%/150% "Lucida Grande", 
 "Lucida Sans Unicode", Verdana, Arial, Helvetica, sans-serif;
 	border-collapse:separate;
 	border-spacing:0;
@@ -84,14 +84,14 @@ caption {
 </style>
 </head>
 
-<body>
+<body style="margin-left: 0px; margin-right: 0px;">
 <center>
 <table width="260">
 <tr>
-<th style="text-align: left;">rank</th>
-<th style="text-align: left;">username</th>
-<th style="text-align: center;">level</th>
-<th style="text-align: right;">bps</th>
+<th style="font-size: 72%; font-weight: bold; text-align: left;">rank</th>
+<th style="font-size: 72%; font-weight: bold; text-align: left;">username</th>
+<th style="font-size: 72%; font-weight: bold; text-align: center;">level</th>
+<th style="font-size: 72%; font-weight: bold; text-align: right;">bps</th>
 </tr>
 {% for user in users %}
   <tr class="{{ loop.cycle('odd','even')}}">
