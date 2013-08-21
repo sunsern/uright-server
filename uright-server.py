@@ -54,11 +54,12 @@ def leaderboard():
         # get best weekly bps
         cur = con.cursor()    
         cur.execute("""
-            SELECT t2.username, t2.level, COALESCE(MAX(t1.bps),0) AS max_bps
+            SELECT t2.displayname, t2.level, COALESCE(MAX(t1.bps),0) AS max_bps
             FROM  sessions AS t1,  users AS t2
             WHERE t1.user_id = t2.user_id
-            AND t1.mode_id = %s 
-            AND t1.added_on > %s
+             AND t1.mode_id = %s 
+             AND t1.added_on > %s
+             AND t2.user_id = t2.linked_id
             GROUP BY t1.user_id
             ORDER BY max_bps DESC
             LIMIT 10
