@@ -266,12 +266,20 @@ def newuser():
         cur = con.cursor()
         cur.execute("""
            INSERT INTO users
-             (username, fullname, email) 
-           VALUES (%s,%s,%s);
-           """, (username, fullname, email))
+             (username, fullname, email, displayname, aliases) 
+           VALUES (%s,%s,%s,%s,%s);
+           """, (username, fullname, email, username[3:], ''))
 
         resp = {}
         resp['user_id'] = con.insert_id()
+
+        cur = con.cursor()
+        cur.execute("""
+           UPDATE users 
+           SET linked_id=user_id
+           WHERE user_id=%s;
+           """, (resp['user_id'],))
+
         return jsonify(resp)
 
     except:
