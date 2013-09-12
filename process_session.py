@@ -1,7 +1,4 @@
-from redis import Redis
-from rq import Queue
 import MySQLdb as mdb
-import datetime
 import traceback
 import json
 
