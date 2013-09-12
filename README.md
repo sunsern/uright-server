@@ -19,8 +19,18 @@ pip install Flask
 Start the server
 ================
 <pre>
+service haproxy start
+</pre>
+<pre>
 ./start-uright-server.py
 </pre>
+
+Stop the server
+================
+<pre>
+./start-uright-server.py
+</pre>
+
 
 
 Monitoring training queue
