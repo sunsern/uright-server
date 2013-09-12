@@ -4,7 +4,6 @@ from flask import (Flask, Response, g,
 from redis import Redis
 from rq import Queue
 import MySQLdb as mdb
-import argparse
 import json
 import numpy as np
 
@@ -398,8 +397,13 @@ def upload():
 #########################################
 
 if __name__ == "__main__":
+    import argparse
+    import logging
+    import logging.handlers as lh
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', default=8000, type=int,
                         help='port to listen (default: 8000)')
     args = parser.parse_args()
+    app.logger.setLevel(logging.INFO)
+    app.logger.addHandler(lh.SysLogHandler(address='/dev/log'))
     app.run(host='0.0.0.0', port=args.port)
