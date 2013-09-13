@@ -1,10 +1,10 @@
 import MySQLdb as mdb
 import traceback
+import datetime
 import json
 
 from retrain_protoset import schedule_retrain
 import mysql_config as mc
-
 
 def process_session(session):
     try:
@@ -52,8 +52,8 @@ def process_round(con, user_id, session_id, mode_id, _round):
     start_time = _round['startTime']
     penup_time = _round['lastPenupTime']
     pendown_time = _round['firstPendownTime']
-    prediction_json = json.dumps(_round['result'])
-    ink_json = json.dumps(_round['ink'])
+    prediction_json = json.dumps(_round['result'], ensure_ascii=False)
+    ink_json = json.dumps(_round['ink'], ensure_ascii=False)
 
     cur = con.cursor()
     cur.execute("""
