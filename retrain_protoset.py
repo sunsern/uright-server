@@ -1,6 +1,6 @@
 from redis import Redis
 from rq import Queue
-from datetime import datetime
+from datetime import datetime, timedelta
 import MySQLdb as mdb
 import json
 import traceback
@@ -116,18 +116,17 @@ def perform_retrain(retrain_id, user_id, label,
         if len(ps.trained_prototypes) > 0:
             insert_protoset(con, user_id, label, ps.toJSON())
 
-        # mark retrain_id as finished
-        mark_as_finished(con, retrain_id)
-        
-        con.commit()
-
     except:
         print '-'*60
         traceback.print_exc()
         print '-'*60
 
     finally:
-        if con: con.close()
+        if con: 
+            # mark retrain_id as finished. no matter what
+            mark_as_finished(con, retrain_id)
+            con.commit()
+            con.close()
 
 
 #################################################
@@ -135,13 +134,29 @@ def perform_retrain(retrain_id, user_id, label,
 #################################################
 
 def already_queued(con, user_id, label):
-    cur = con.cursor()
+    cur = con.cursor(cursorclass=mdb.cursors.DictCursor)
     cur.execute("""
-           SELECT retrain_id FROM retrain_queue
-           WHERE user_id=%s AND label=%s AND finished_on=NULL;
+           SELECT * FROM retrain_queue
+           WHERE user_id=%s AND label=%s
+           ORDER BY added_on DESC
+           LIMIT 1;
            """, (user_id, label))
     row = cur.fetchone()
-    return (row is not None)
+    # not found in the training queue
+    if row is None:
+        return False
+    else:
+        # found in the training queue and last entry is not finished
+        if row['finished_on'] is None:
+            # allow adding to the training queue if 10 minutes passed
+            ten_minutes_ago = datetime.now() - datetime.timedelta(minutes=10)
+            if row['added_on'] < ten_minutes_ago:
+                return False
+            else:
+                # already in the queue ... 
+                return True
+        else: 
+            return False
 
 def mark_as_queued(con, user_id, label):
     cur = con.cursor()
@@ -246,7 +261,7 @@ def closest_prototype(con, user_id, label, user_data):
 
 def insert_protoset(con, user_id, label, ps_json):
     ps_type = ps_json['type']
-    ps_json_str = json.dumps(ps_json)
+    ps_json_str = json.dumps(ps_json, ensure_ascii=False)
     cur = con.cursor()
     cur.execute("""
            INSERT INTO protosets
