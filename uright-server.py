@@ -6,6 +6,7 @@ from rq import Queue
 import MySQLdb as mdb
 import json
 import numpy as np
+import logging
 
 from process_session import process_session
 import mysql_config as mc
@@ -88,7 +89,7 @@ def leaderboard():
                                users=users, 
                                reset=next_monday.strftime("%Y/%m/%d"))
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         abort(400)
 
 #########################################
@@ -100,6 +101,8 @@ def userstats():
         if (key != mc.secret_key): abort(403)
 
         user_id = request.form['user_id']
+        if int(user_id) == 0: 
+            return jsonify({'ERROR':1})
 
         con = g.db_con
         
@@ -140,7 +143,7 @@ def userstats():
 
         return jsonify(resp)
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         return jsonify({'ERROR':1})
 
 
@@ -171,7 +174,7 @@ def annoucement():
 
         return jsonify(resp)
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         return jsonify({'ERROR':1})
 
 #########################################
@@ -201,7 +204,7 @@ def charsets():
         return Response(json.dumps(resp, 
                                    ensure_ascii=False).encode('utf-8'))
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         return jsonify({'ERROR':1})
 
 #########################################
@@ -247,7 +250,7 @@ def protosets():
         return Response(json.dumps(resp, 
                                    ensure_ascii=False).encode('utf-8'))
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         return jsonify({'ERROR' : 1})
     
 #########################################
@@ -283,7 +286,7 @@ def newuser():
         return jsonify(resp)
 
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         return jsonify({'user_id':0})
 
 #########################################
@@ -305,14 +308,17 @@ def login():
         row = cur.fetchone()
         if row is None:
             resp['login_result'] = 'User not found'
+            app.logger.warning("User %s not found."%(username))
         else:
             resp['login_result'] = 'OK'
             resp['user_id'] = row['user_id']
+            app.logger.info("User %s logged in successfully."%(
+                    username))
 
         return jsonify(resp)
 
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         return jsonify({'login_result':'ERROR'})
 
 #########################################
@@ -388,22 +394,31 @@ def upload():
         ##################################    
         q = Queue('normal', connection=Redis())
         q.enqueue(process_session, session)
+        
+        app.logger.info("User %s uploaded a session"%(user_id))
 
         return jsonify({'Error':0})
     except:
-        import traceback; traceback.print_exc()
+        app.logger.exception("An exception has been raised")
         return jsonify({'Error':1})
 
 #########################################
 
 if __name__ == "__main__":
+    # parse arguments
     import argparse
-    import logging
-    import logging.handlers as lh
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', default=8000, type=int,
                         help='port to listen (default: 8000)')
     args = parser.parse_args()
+    
+    # set up logger
+    import logging.handlers as lh
+    app.logger_name = 'uright'
     app.logger.setLevel(logging.INFO)
-    app.logger.addHandler(lh.SysLogHandler(address='/dev/log'))
-    app.run(host='0.0.0.0', port=args.port)
+    formatter = logging.Formatter('%(name)s: %(message)s')
+    syslog_handler = lh.SysLogHandler(address='/dev/log')
+    syslog_handler.setFormatter(formatter)
+    app.logger.addHandler(syslog_handler)
+
+    app.run(host='127.0.0.1', port=args.port)

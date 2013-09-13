@@ -1,10 +1,18 @@
 import MySQLdb as mdb
-import traceback
 import datetime
 import json
+import logging
+from logging import handlers
 
 from retrain_protoset import schedule_retrain
 import mysql_config as mc
+
+# set up a logger
+logger = logging.getLogger("uright.processor")
+formatter = logging.Formatter('%(name)s: %(message)s')
+syslog_handler = handlers.SysLogHandler(address='/dev/log')
+syslog_handler.setFormatter(formatter)
+logger.addHandler(syslog_handler)
 
 def process_session(session):
     try:
@@ -36,11 +44,10 @@ def process_session(session):
              """, (current_time, session_id))
 
         con.commit()
-    
+        logger.info("Processed a session from user %d"%(user_id))
+
     except:
-        print '-' * 60
-        traceback.print_exc()
-        print '-' * 60
+        logger.exception('An exception has been raised')
 
     finally:
         if con: con.close()

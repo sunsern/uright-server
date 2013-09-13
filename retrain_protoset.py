@@ -3,8 +3,9 @@ from rq import Queue
 from datetime import datetime, timedelta
 import MySQLdb as mdb
 import json
-import traceback
+import logging
 import numpy as np
+from logging import handlers
 
 from uright.clustering import ClusterKMeans
 from uright.prototype import PrototypeDTW
@@ -16,6 +17,13 @@ import retrain_config as rc
 _PU_IDX = INK_STRUCT['PU_IDX']
 
 RACE_MODE_ID = 3
+
+# set up a logger
+logger = logging.getLogger("uright.retrain")
+formatter = logging.Formatter('%(name)s: %(message)s')
+syslog_handler = handlers.SysLogHandler(address='/dev/log')
+syslog_handler.setFormatter(formatter)
+logger.addHandler(syslog_handler)
 
 def schedule_retrain(user_id, label):
     try:
@@ -30,16 +38,16 @@ def schedule_retrain(user_id, label):
         cur.execute("SET NAMES utf8mb4")
 
         if already_queued(con, user_id, label):
-            print "[User %s] No retrain: Already queuing."%(
-                str(user_id))
+            logger.info("No retrain: (user %s, %s) Already queuing."%(
+                    str(user_id), label))
             return
 
         # dont retrain if not enough new examples
         n_new_examples = count_new_examples(con, user_id, label)
         if (hasTrained(con, user_id, label) and 
             n_new_examples < rc.retrain_frequency):
-            print "[User %s] No retrain: too few examples (%d)"%(
-                str(user_id),n_new_examples)
+            logger.info("No retrain: (user %s, %s) too few examples (%d)"%(
+                    str(user_id), label, n_new_examples))
             return
 
         # read user examples
@@ -68,9 +76,7 @@ def schedule_retrain(user_id, label):
                   label, user_data, prototype_data)
         
     except:
-        print '-'*60
-        traceback.print_exc()
-        print '-'*60
+        logger.exception("An exception has been raised")
 
     finally:
         if con: con.close()
@@ -114,12 +120,11 @@ def perform_retrain(retrain_id, user_id, label,
 
         # add json of protoset to table `protosets`
         if len(ps.trained_prototypes) > 0:
+            logger.info("New protoset of %s for user %s"%(label, str(user_id)))
             insert_protoset(con, user_id, label, ps.toJSON())
 
     except:
-        print '-'*60
-        traceback.print_exc()
-        print '-'*60
+        logger.exception('An exception has been raised')
 
     finally:
         if con: 
@@ -275,7 +280,7 @@ def mark_as_finished(con, retrain_id):
     cur.execute("""
            UPDATE retrain_queue 
            SET finished_on=%s
-           WHERE retrain_id=%s
+           WHERE retrain_id<=%s AND finished_on is NULL
            """, (current, retrain_id))
 
 def do_normalize_ink(user_raw_ink, timestamp=False, version='uright3'):
