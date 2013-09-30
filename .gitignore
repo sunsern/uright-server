@@ -1,1 +1,3 @@
 *.pyc
+*~
+mysql_config.py

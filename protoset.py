@@ -26,9 +26,6 @@ class ProtosetDTW(object):
                     center_type=self.center_type,
                     state_reduction=self.state_reduction)
                 self.trained_prototypes.append(proto)
-                if verbose:
-                    print ("Prototype for %s (%d instances)"%(
-                            self.label, len(weighted_ink_list)))
 
     def toJSON(self):
         json_obj = {}
