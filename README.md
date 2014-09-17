@@ -1,10 +1,11 @@
 uright-server
 =============
-A lightweight server for uRight iOS app.
+A lightweight backend server for uRight iOS app.
 
 
 Requirements
 ============
+* uright-python (https://github.com/sunsern/uright-python)
 * redis (http://redis.io/)
 * rq (http://python-rq.org/)
 * Flask (http://flask.pocoo.org/docs/)
